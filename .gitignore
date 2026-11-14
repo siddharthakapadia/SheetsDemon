@@ -1,0 +1,30 @@
+# Virtual environment — 80 MB of platform-specific binaries.
+.venv/
+venv/
+
+# The user's own workbooks. This directory holds real coursework and uploads;
+# nothing in it belongs in version control.
+workspace/
+*.xlsx
+*.xlsm
+*.bak
+~$*
+
+# Credentials never live in the repo (they go to ~/.config/sheets-doctor/env),
+# but guard against a stray copy.
+.env
+env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
