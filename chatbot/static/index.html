@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SheetsDemon</title>
+<style>
+  /* ------------------------------------------------------------------
+     SheetsDemon — terminal/HUD.
+     An instrument panel reading a live sheet, not a dashboard of cards.
+     Rules: hairlines over shadows, 2px radius over pills, mono for every
+     number and address, weight distributed unevenly on purpose.
+     ------------------------------------------------------------------ */
+  :root {
+    /* Black / Excel green / white. Greens are the Excel logo ramp:
+       #185C37 #107C41 #21A366 #33C481. #107C41 is the brand green but is too
+       dark to read on black, so it carries fills and #33C481 carries accents. */
+    --bg:#0A0A0A; --bg-lift:#0F110F; --panel:#121412; --panel-2:#171A17;
+    --line:#232823; --line-soft:#1A1E1A;
+    --ink:#FFFFFF; --muted:#8A938A; --faint:#555D55;
+    --accent:#33C481; --accent-deep:#107C41; --accent-soft:#0C1A12;
+    --accent-glow:rgba(51,196,129,.22);
+    --hot:#FFFFFF; --hot-deep:#D8DCD8; --hot-soft:#161916;
+    --green:#33C481; --amber:#FFFFFF;
+    --excel-dark:#185C37; --excel-mid:#21A366;
+    --sheet:#FFFFFF; --sheet-head:#F3F2F1; --sheet-line:#D4D4D4; --sheet-ink:#1A1A1A;
+    --r:0px;
+    --mono:"JetBrains Mono","SF Mono","IBM Plex Mono",Menlo,ui-monospace,monospace;
+    --sans:"Space Grotesk","Helvetica Neue","Archivo",Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  ::selection { background:var(--accent-deep); color:#fff; }
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--line); border:2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background:var(--accent-deep); }
+
+  html, body { height:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink); overflow:hidden;
+    font:15px/1.6 var(--sans);
+    /* One off-centre wash, not a symmetric pair of blobs, over a faint grid. */
+    background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size:34px 34px, 34px 34px;
+    background-attachment:fixed;
+  }
+  /* Scan lines. Low enough to read as texture, not as stripes. */
+  body::after {
+    content:""; position:fixed; inset:0; z-index:80; pointer-events:none;
+    background:repeating-linear-gradient(
+      180deg, rgba(255,255,255,.028) 0 1px, transparent 1px 3px);
+  }
+
+  /* ---------------- shell ---------------- */
+  #shell { display:grid; grid-template-columns:252px minmax(0,1fr) 392px; height:100vh; }
+  @media (max-width:1280px) { #shell { grid-template-columns:214px minmax(0,1fr) 348px; } }
+  @media (max-width:1040px) { #shell { grid-template-columns:minmax(0,1fr) 340px; } #rail { display:none; } }
+  .col { min-width:0; display:flex; flex-direction:column; height:100vh; }
+
+  /* Corner brackets — the HUD tell. Applied to panels that hold readouts. */
+  .brk { position:relative; }
+  .brk::before, .brk::after {
+    content:""; position:absolute; width:7px; height:7px; pointer-events:none;
+    border-color:var(--accent); opacity:.55;
+  }
+  .brk::before { top:-1px; left:-1px; border-top:1px solid; border-left:1px solid; }
+  .brk::after { bottom:-1px; right:-1px; border-bottom:1px solid; border-right:1px solid; }
+
+  /* ASCII-style section rule: ──── LABEL ──────────── */
+  .rule {
+    display:flex; align-items:center; gap:9px; margin:18px 0 9px;
+    font:10.5px/1 var(--mono); letter-spacing:.17em; text-transform:uppercase;
+    color:var(--faint); white-space:nowrap;
+  }
+  .rule::before { content:"──"; color:var(--line); }
+  .rule::after { content:""; flex:1; height:1px; background:var(--line); }
+  .rule b { color:var(--accent); font-weight:400; }
+
+  /* ---------------- left rail ---------------- */
+  #rail {
+    background:#000; border-right:2px solid var(--line);
+    overflow-y:auto; padding:15px 13px 13px; gap:13px; position:relative;
+  }
+  .brand { display:flex; align-items:center; gap:11px; padding:0 2px 2px; }
+  .brand .glyph {
+    width:38px; height:38px; border-radius:var(--r); flex:none;
+    background:var(--accent-deep); display:grid; place-items:center; font-size:19px;
+  }
+  .brand h1 {
+    margin:0; font:700 15.5px/1.1 var(--sans); letter-spacing:-.015em;
+    background:linear-gradient(96deg,#33C481,var(--accent) 40%,var(--hot));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .brand .tag {
+    font:600 9px/1.4 var(--mono); letter-spacing:.17em;
+    text-transform:uppercase; color:var(--faint); margin-top:2px;
+  }
+
+  .pill {
+    display:flex; align-items:center; gap:8px; padding:8px 11px; border-radius:var(--r);
+    background:var(--panel); border:1px solid var(--line);
+    font:11.5px/1 var(--mono); letter-spacing:.02em; color:var(--ink);
+  }
+  .pill .led { width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 7px rgba(51,196,129,.7); flex:none; }
+  .pill.off .led { background:var(--faint); box-shadow:none; }
+  .pill.warn .led { background:var(--amber); box-shadow:0 0 7px rgba(255,255,255,.6); }
+
+  .nav { display:flex; flex-direction:column; gap:2px; }
+  .nav button {
+    display:block; width:100%; text-align:left; cursor:pointer; position:relative;
+    background:transparent; border:0; border-left:2px solid transparent; border-radius:0;
+    padding:7px 10px; color:var(--ink); font:inherit;
+    transition:background .12s, border-color .12s;
+  }
+  .nav button:hover { background:var(--panel); }
+  .nav button.on { background:var(--accent-soft); border-left-color:var(--accent); }
+  .nav .t { font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .nav .d { font:10.5px/1.45 var(--mono); color:var(--faint); margin-top:2px; }
+
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:11px 12px; }
+  .card h3 {
+    margin:0 0 5px; font:600 9.5px/1 var(--mono);
+    letter-spacing:.17em; text-transform:uppercase; color:var(--accent);
+  }
+  .card p { margin:0; font-size:11.5px; color:var(--muted); line-height:1.55; }
+
+  /* Rotated spine label — fills the rail's dead space at the bottom. */
+  .railfoot {
+    margin-top:auto; padding-top:12px; border-top:1px solid var(--line-soft);
+    font:9.5px/1.7 var(--mono); color:var(--faint); letter-spacing:.06em;
+  }
+  .railfoot b { color:var(--muted); font-weight:400; }
+
+  /* ---------------- centre ---------------- */
+  #center { overflow-y:auto; padding:17px 22px 26px; }
+  /* Structure is exposed, not softened: sections butt against 2px black gaps. */
+  .tiles, .gridwrap, .fxbar { border-width:2px; }
+  .eyebrow {
+    font:700 10px/1 var(--mono); letter-spacing:.2em;
+    text-transform:uppercase; color:var(--accent);
+  }
+  /* 70/30: the title owns the left, actions sit hard right. */
+  .titlebar { display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; margin-bottom:4px; }
+  .titlebar h2 {
+    margin:4px 0 0; font:700 40px/.95 var(--sans);
+    letter-spacing:-.045em; text-transform:uppercase;
+  }
+  .titlebar .grow { flex:1; }
+
+  .btn {
+    border-radius:var(--r); padding:8px 14px; font:13px var(--sans);
+    font-weight:600; cursor:pointer; border:1px solid var(--line);
+    background:var(--panel); color:var(--ink);
+    transition:border-color .12s,color .12s,background .12s;
+  }
+  .btn:hover:not(:disabled) { border-color:var(--accent); color:#33C481; background:var(--accent-soft); }
+  .btn.primary {
+    border:1px solid var(--accent-deep); color:#000; font-weight:700;
+    background:var(--accent);
+  }
+  .btn.primary:hover:not(:disabled) { filter:brightness(1.14); border-color:transparent; }
+  .btn:disabled { opacity:.38; cursor:default; }
+
+  /* Instrument strip: hairline-joined, deliberately uneven widths. */
+  .tiles {
+    display:grid; grid-template-columns:1.7fr 1.15fr 1fr 1.3fr;
+    gap:1px; background:var(--line); border:1px solid var(--line);
+    border-radius:var(--r); margin:14px 0 2px;
+  }
+  @media (max-width:1320px) { .tiles { grid-template-columns:1.5fr 1fr; } }
+  .tile { background:var(--bg-lift); padding:12px 14px 13px; position:relative; }
+  .tile:first-child { background:var(--accent-soft); }
+  .tile .k {
+    font:700 9.5px/1 var(--mono); letter-spacing:.17em;
+    text-transform:uppercase; color:var(--faint);
+  }
+  .tile .v {
+    font:400 30px/1.08 var(--mono); letter-spacing:-.035em; margin-top:7px;
+    font-variant-numeric:tabular-nums; color:var(--ink);
+  }
+  /* The lead readout is the headline; the rest are secondary instruments,
+     deliberately quieter and laid out differently so the row is not four
+     of the same card. */
+  .tile:first-child {
+    border-left:2px solid var(--accent); padding:14px 16px 15px;
+    display:flex; flex-direction:column; justify-content:center;
+  }
+  .tile:first-child .v { font-size:54px; color:var(--ink); margin-top:10px; font-weight:700; }
+  .tile:not(:first-child) {
+    display:flex; flex-direction:column; justify-content:space-between;
+    padding:10px 13px 11px;
+  }
+  .tile:not(:first-child) .v { font-size:21px; margin-top:4px; color:var(--ink); }
+  .tile:not(:first-child) .k { color:var(--faint); font-size:9px; }
+  .tile:not(:first-child) .s { font-size:10px; margin-top:4px; }
+  .tile .s { font:11px/1.4 var(--mono); margin-top:6px; color:var(--muted); }
+  .tile .s.good { color:var(--green); } .tile .s.warn { color:var(--amber); } .tile .s.bad { color:var(--hot); }
+
+  .sheetbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:9px; }
+  .sheet-chip {
+    display:inline-flex; align-items:center; gap:7px; padding:4px 10px; border-radius:var(--r);
+    background:var(--accent-soft); border:1px solid rgba(51,196,129,.32);
+    color:#33C481; font:12px var(--mono); font-weight:500;
+  }
+  .sheetbar .meta { font:11.5px var(--mono); color:var(--faint); }
+
+  .fxbar { display:flex; align-items:stretch; gap:0; margin-bottom:11px; border:1px solid var(--line); border-radius:var(--r); background:var(--bg-lift); }
+  .fxbar .addr {
+    min-width:70px; text-align:center; padding:7px 10px;
+    border-right:1px solid var(--line); background:var(--panel);
+    font:12.5px var(--mono); color:#33C481;
+  }
+  .fxbar .fx {
+    color:var(--hot); font:800 italic 13px var(--sans);
+    display:grid; place-items:center; padding:0 11px; border-right:1px solid var(--line);
+  }
+  .fxbar .val {
+    flex:1; padding:7px 12px; font:12.5px var(--mono);
+    color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    display:flex; align-items:center;
+  }
+
+  .quick { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:11px; }
+  .quick button {
+    background:transparent; border:1px solid var(--line); color:var(--muted);
+    border-radius:var(--r); padding:5px 11px; font:11.5px var(--mono);
+    cursor:pointer; transition:border-color .12s,color .12s,background .12s;
+  }
+  .quick button:hover:not(:disabled) { border-color:var(--accent); color:#33C481; background:var(--accent-soft); }
+  .quick button:disabled { opacity:.4; cursor:default; }
+
+  /* Past the last cell is off-sheet: render it as dead panel, not blank paper,
+     so a short table does not look like a half-painted container. */
+  .gridwrap {
+    border:1px solid var(--line); border-radius:var(--r); overflow:auto;
+    max-height:46vh; background:var(--bg-lift);
+    background-image:repeating-linear-gradient(135deg,
+      rgba(51,196,129,.05) 0 1px, transparent 1px 7px);
+  }
+  table.grid { background:var(--sheet); }
+  table.grid { border-collapse:collapse; font:12px var(--mono); color:var(--sheet-ink); width:max-content; min-width:100%; }
+  table.grid th, table.grid td { border:1px solid var(--sheet-line); padding:3px 7px; height:22px; white-space:nowrap; }
+  table.grid th { background:var(--sheet-head); color:#444444; font-weight:600; text-align:center; position:sticky; top:0; z-index:2; }
+  table.grid th.rowhead { position:sticky; left:0; z-index:1; top:auto; min-width:34px; }
+  table.grid td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  table.grid td.f { background:#E8F5EE; }
+  table.grid td.sel { outline:2px solid var(--accent-deep); outline-offset:-2px; }
+  .gridempty { padding:34px 18px; text-align:center; color:var(--muted); font:12.5px var(--mono); background:var(--panel); }
+
+  .findings { margin-top:4px; }
+  .finding {
+    background:var(--panel); border:1px solid var(--line); border-left:2px solid var(--faint);
+    border-radius:var(--r); padding:10px 12px; margin-bottom:6px;
+  }
+  /* No red in this palette, so severity is carried by fill rather than hue:
+     an error is the only filled block on the page, which outranks any colour. */
+  .finding.error {
+    background:var(--accent-deep); border-color:var(--accent);
+    border-left:4px solid var(--accent); color:#000;
+  }
+  .finding.error .cell { color:#000; font-weight:700; }
+  .finding.error .msg { font-weight:700; }
+  .finding.error .fix { color:rgba(0,0,0,.82); }
+  .finding.error .fix b { color:#000; }
+  .finding.warning { border-left:3px solid var(--ink); }
+  .finding.warning .msg { color:var(--ink); }
+  .finding.info, .finding.done { border-left-color:var(--excel-mid); }
+  .finding .top { display:flex; gap:9px; align-items:baseline; }
+  .finding .cell { font:11.5px var(--mono); color:#33C481; flex:none; }
+  .finding .msg { font-size:13px; font-weight:560; }
+  .finding .fix { font-size:12.5px; color:var(--muted); margin-top:5px; }
+  .finding .fix b { color:var(--green); font-weight:600; }
+
+  /* ---------------- right chat ---------------- */
+  #chat { background:#000; border-left:2px solid var(--line); }
+  .chead { display:flex; align-items:center; gap:11px; padding:12px 15px; border-bottom:1px solid var(--line); }
+  .chead .orb {
+    width:30px; height:30px; border-radius:50%; flex:none;
+    background:radial-gradient(circle at 32% 28%,#7FE3AE,var(--accent) 42%,var(--hot-deep));
+    box-shadow:0 0 14px var(--accent-glow);
+  }
+  .chead .n { font:600 14px/1.2 var(--sans); letter-spacing:-.01em; }
+  .chead .s { font:10.5px/1.4 var(--mono); color:var(--muted); display:flex; align-items:center; gap:6px; margin-top:2px; }
+  .chead .s .led { width:5px; height:5px; border-radius:50%; background:var(--green); flex:none; }
+  .chead .grow { flex:1; }
+  .iconbtn {
+    background:transparent; border:1px solid var(--line); color:var(--muted);
+    border-radius:var(--r); padding:5px 10px; font:11.5px var(--mono); cursor:pointer;
+  }
+  .iconbtn:hover { color:#33C481; border-color:var(--accent); }
+
+  #log { flex:1; overflow-y:auto; padding:14px 15px; }
+  /* Empty state: a boot block, not a blank panel. Removed on first message. */
+  #logIntro {
+    font:11.5px/1.75 var(--mono); color:var(--muted);
+    white-space:pre-wrap; margin:2px 0 0;
+  }
+  #logIntro .c { color:#2E3A2E; }
+  #logIntro b { color:#33C481; font-weight:400; }
+  .msg { margin-bottom:13px; }
+  .msg .who { font:700 9.5px/1 var(--mono); text-transform:uppercase; letter-spacing:.17em; margin-bottom:5px; }
+  .user .who { color:var(--faint); }
+  .bot .who { color:var(--accent); }
+  .bubble { padding:10px 12px; border-radius:var(--r); white-space:pre-wrap; font-size:13.5px; line-height:1.58; }
+  .user .bubble { background:var(--panel-2); border:1px solid var(--line-soft); border-left:2px solid var(--accent-deep); }
+  .bot .bubble { background:var(--panel); border:1px solid var(--line); }
+  .bubble code { background:rgba(51,196,129,.15); color:#33C481; padding:1px 5px; border-radius:2px; font:12px var(--mono); }
+  .bubble strong { color:#fff; font-weight:660; }
+
+  .tool {
+    display:flex; align-items:center; gap:8px; font:11.5px var(--mono); color:var(--muted);
+    margin:6px 0; padding:4px 10px; background:var(--panel);
+    border:1px solid var(--line); border-radius:var(--r); width:fit-content;
+  }
+  .tool.err { color:#FFFFFF; background:var(--hot-soft); border-color:rgba(255,255,255,.32); }
+  .dot { width:5px; height:5px; border-radius:50%; flex:none; background:var(--accent); box-shadow:0 0 7px var(--accent-glow); animation:pulse 1.15s ease-in-out infinite; }
+  .tool.done .dot { animation:none; opacity:.4; box-shadow:none; }
+  .tool.err .dot { animation:none; background:var(--hot); box-shadow:none; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.8)} }
+
+  details.think { margin:6px 0; font-size:12.5px; color:var(--muted); border-left:1px solid var(--accent-deep); padding-left:11px; }
+  details.think summary { cursor:pointer; outline:none; color:var(--faint); font:10.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+  details.think .body { white-space:pre-wrap; margin-top:5px; }
+
+  .banner {
+    margin:0 0 12px; padding:11px 12px; background:var(--hot-soft); color:#FFFFFF;
+    border:1px solid rgba(255,255,255,.28); border-left:2px solid var(--hot);
+    border-radius:var(--r); font-size:12.5px; line-height:1.55;
+  }
+  .banner code { background:rgba(255,255,255,.16); color:#FFFFFF; padding:1px 5px; border-radius:2px; font:11.5px var(--mono); user-select:all; }
+  .banner a { color:#FFFFFF; text-decoration:underline; }
+  .banner button { background:var(--panel); border:1px solid rgba(255,255,255,.42); color:#FFFFFF; border-radius:var(--r); padding:5px 10px; font:11.5px var(--mono); cursor:pointer; }
+  .banner button:hover:not(:disabled) { border-color:var(--hot); color:#fff; }
+  .banner button:disabled { opacity:.5; cursor:default; }
+
+  .chips { display:flex; gap:5px; flex-wrap:wrap; padding:0 15px 10px; }
+  .chips button {
+    background:transparent; border:1px solid var(--line); color:var(--muted);
+    border-radius:var(--r); padding:4px 10px; font:11.5px var(--mono); cursor:pointer;
+    transition:border-color .12s,color .12s,background .12s;
+  }
+  .chips button:hover { border-color:var(--accent); color:#33C481; background:var(--accent-soft); }
+  .chips button[data-q="fix it"] { border-color:rgba(255,255,255,.42); color:#FFFFFF; }
+  .chips button[data-q="fix it"]:hover { border-color:var(--hot); color:#fff; background:var(--hot-soft); }
+
+  .composer { display:flex; gap:7px; padding:10px 14px 12px; border-top:1px solid var(--line); align-items:flex-end; }
+  textarea {
+    flex:1; resize:none; font:13.5px var(--sans); color:var(--ink);
+    background:var(--bg-lift); border:1px solid var(--line); border-radius:var(--r);
+    padding:9px 11px; max-height:150px; outline:none;
+  }
+  textarea::placeholder { color:var(--faint); }
+  textarea:focus { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent-glow); }
+  .sendbtn {
+    border:0; border-radius:var(--r); width:40px; height:38px; flex:none; cursor:pointer;
+    background:var(--accent); color:#000; font-size:15px; font-weight:700;
+  }
+  .sendbtn:disabled { opacity:.38; cursor:default; }
+
+  #drop { position:fixed; inset:0; z-index:90; display:none; align-items:center; justify-content:center;
+    background:rgba(16,124,65,.17); backdrop-filter:blur(3px); border:2px dashed var(--accent);
+    font:600 15px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:#33C481; }
+  #drop.on { display:flex; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+
+<div id="shell">
+
+  <!-- ============ LEFT RAIL ============ -->
+  <aside class="col" id="rail">
+    <div class="brand">
+      <div class="glyph">👹</div>
+      <div>
+        <h1>SheetsDemon</h1>
+        <div class="tag">Spreadsheet Mastery Lab</div>
+      </div>
+    </div>
+
+    <div class="pill off" id="excelPill" title="Live connection to the Excel app">
+      <span class="led"></span><span id="excelPillText">Checking Excel…</span>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="on" data-view="workbook">
+        <div class="t">▦ Workbook</div><div class="d">Live sheet workspace</div></button>
+      <button data-view="audit">
+        <div class="t">⌁ Formula audit</div><div class="d">Find formula weak spots</div></button>
+      <button data-view="practice">
+        <div class="t">✦ Practice forge</div><div class="d">Generate a safe variant</div></button>
+      <button data-view="charts">
+        <div class="t">◑ Data &amp; charts</div><div class="d">Choose the right visual</div></button>
+    </nav>
+
+    <div class="card brk">
+      <h3>Course mode</h3>
+      <p>Hints before answers. Tier 1 nudges, tier 3 spells it out — you choose how far down you go.</p>
+    </div>
+    <div class="card brk">
+      <h3>Focus streak</h3>
+      <p id="streakText">—</p>
+    </div>
+    <div class="card brk">
+      <h3>Files</h3>
+      <div id="files" style="display:flex;flex-direction:column;gap:5px;margin-top:6px"></div>
+      <button class="btn" id="newBtn" style="width:100%;margin-top:8px;font-size:12.5px;padding:7px;border-color:rgba(51,196,129,.4);color:#33C481">+ New spreadsheet</button>
+      <button class="btn" id="uploadBtn" style="width:100%;margin-top:6px;font-size:12.5px;padding:7px">Upload workbook</button>
+    </div>
+    <div class="railfoot">
+      <b>SHEETSDEMON</b> · build 2026-10-29<br>
+      openpyxl + AppleScript bridge<br>
+      22 tools · 491 assertions green
+    </div>
+  </aside>
+
+  <!-- ============ CENTRE ============ -->
+  <main class="col" id="center">
+    <div class="titlebar">
+      <div>
+        <div class="eyebrow">Introduction to Spreadsheets · Live session</div>
+        <h2 id="centerTitle">Workbook command center</h2>
+      </div>
+      <div class="grow"></div>
+      <button class="btn" id="newPracticeBtn">+ New practice sheet</button>
+      <button class="btn primary" id="fullAuditBtn">Run full audit ↗</button>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="rule"><b>LIVE SHEET</b> · mirrored from Excel over AppleScript</div>
+
+    <div class="sheetbar">
+      <span class="sheet-chip" id="sheetChip">No sheet</span>
+      <span class="meta" id="sheetMeta">—</span>
+      <span class="grow" style="flex:1"></span>
+      <button class="btn" id="refreshBtn" style="font-size:12.5px;padding:6px 12px">↻ Refresh</button>
+    </div>
+
+    <div class="fxbar">
+      <div class="addr" id="fxAddr">—</div>
+      <span class="fx">fx</span>
+      <div class="val" id="fxVal">Select a cell in Excel, then refresh</div>
+    </div>
+
+    <div class="quick" id="quick"></div>
+
+    <div class="gridwrap brk" id="gridwrap">
+      <div class="gridempty" id="gridEmpty">Open a workbook in Excel to mirror it here.</div>
+    </div>
+
+    <div class="rule"><b>FINDINGS</b> · parsed, not eyeballed</div>
+
+    <div class="findings" id="findings"></div>
+  </main>
+
+  <!-- ============ RIGHT CHAT ============ -->
+  <aside class="col" id="chat">
+    <div class="chead">
+      <div class="orb"></div>
+      <div>
+        <div class="n">SheetsDemon</div>
+        <div class="s"><span class="led"></span><span id="chatSub">Socratic tutor active</span></div>
+      </div>
+      <div class="grow"></div>
+      <button class="iconbtn" id="clearBtn">Clear</button>
+    </div>
+
+    <div id="log"><div id="logIntro">
+<span class="c">┌─ SESSION ─────────────────────────</span>
+<span class="c">│</span> engine  <b>sheetdoc</b> · 22 tools
+<span class="c">│</span> bridge  <b>AppleScript</b> → Excel.app
+<span class="c">│</span> audits  parsed, never eyeballed
+<span class="c">└───────────────────────────────────</span>
+
+Ask about a cell. Or say <b>fix it</b> and I'll
+apply what the audit can prove.</div></div>
+
+    <div class="chips">
+      <button data-q="what would you fix?">Preview fixes</button>
+      <button data-q="fix it">Fix my formulas</button>
+      <button data-q="Give me a tier 1 hint for the cell I have selected">Tier 1 hint</button>
+      <button data-q="Explain the error I'm seeing">Explain an error</button>
+      <button data-q="How do I set up a pivot table for this data?">Pivot setup</button>
+      <button data-q="What chart should I use for this data?">Chart advice</button>
+      <button data-q="make a chart of my data">Build a chart</button>
+      <button data-q="make a data table with columns ">New table</button>
+      <button data-q="create a new spreadsheet called ">New spreadsheet</button>
+    </div>
+
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="Ask about a cell, formula, or concept…"></textarea>
+      <button class="sendbtn" id="send">↗</button>
+    </div>
+  </aside>
+</div>
+
+<input type="file" id="filepicker" accept=".xlsx,.xlsm" style="display:none" multiple>
+<div id="drop">Drop your workbook to upload</div>
+
+<script>
+const sessionId = crypto.randomUUID();
+const $ = id => document.getElementById(id);
+const log = $('log'), input = $('input'), send = $('send');
+let busy = false, liveState = null;
+
+/* Escapes for BOTH text and attribute context. Quotes matter: cell values and
+   filenames are interpolated into title="..." and data-f="...", so a value
+   containing a double quote would otherwise close the attribute and let a
+   crafted .xlsx inject an event handler. */
+const esc = s => String(s).replace(/[&<>"']/g, c => (
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = s => esc(s)
+  .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+  .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+const colName = n => { let s=''; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=(n-r-1)/26; } return s; };
+
+/* ---------------- chat ---------------- */
+function bubble(role, text) {
+  const intro = $('logIntro'); if (intro) intro.remove();
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  d.innerHTML = `<div class="who">${role==='user'?'You':'SheetsDemon'}</div>
+                 <div class="bubble">${fmt(text)}</div>`;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+  return d.querySelector('.bubble');
+}
+
+const TOOL_LABELS = {
+  inspect_workbook:'Reading the workbook', audit_formulas:'Auditing formulas',
+  check_formatting:'Checking formatting', conditional_formatting:'Conditional formatting',
+  socratic_hint:'Working out a hint', explain_error:'Looking up that error',
+  create_practice:'Building a practice problem', create_dataset:'Generating a dataset',
+  explain_pivot:'Planning the pivot table', recommend_chart:'Analysing the data shape',
+  build_workbook:'Building the workbook', edit_workbook:'Editing the workbook',
+  list_workbooks:'Checking your files', excel_status:'Looking at Excel',
+  read_excel_live:'Reading your live sheet', write_excel_live:'Writing into Excel',
+  format_excel_live:'Formatting cells in Excel', audit_live_workbook:'Auditing your open workbook',
+  open_in_excel:'Opening it in Excel', create_chart_live:'Building the chart',
+};
+
+async function ask(text) {
+  if (busy || !text.trim()) return;
+  busy = true; send.disabled = true;
+  bubble('user', text);
+  input.value = ''; input.style.height = 'auto';
+  let thinkEl = null; const toolEls = {};
+  try {
+    const res = await fetch('/api/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({session_id:sessionId, message:text}),
+    });
+    const reader = res.body.getReader(); const dec = new TextDecoder(); let buf='';
+    while (true) {
+      const {done, value} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const parts = buf.split('\n\n'); buf = parts.pop();
+      for (const part of parts) {
+        const line = part.split('\n').find(l => l.startsWith('data: ')); if (!line) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === 'thinking') {
+          if (!thinkEl) {
+            const d = document.createElement('details'); d.className='think';
+            d.innerHTML = '<summary>Reasoning</summary><div class="body"></div>';
+            log.appendChild(d); thinkEl = d.querySelector('.body');
+          }
+          thinkEl.textContent += ev.text; log.scrollTop = log.scrollHeight;
+        } else if (ev.type === 'text') { bubble('bot', ev.text); thinkEl = null; }
+        else if (ev.type === 'tool_start') {
+          const el = document.createElement('div'); el.className='tool';
+          el.innerHTML = `<span class="dot"></span><span>${TOOL_LABELS[ev.name]||ev.name}…</span>`;
+          log.appendChild(el); toolEls[ev.name]=el; log.scrollTop = log.scrollHeight;
+        } else if (ev.type === 'tool_end') {
+          const el = toolEls[ev.name];
+          if (el) { el.classList.add('done'); if (ev.error) el.classList.add('err');
+            el.querySelector('span:last-child').textContent =
+              (TOOL_LABELS[ev.name]||ev.name) + (ev.error?' — failed':''); }
+          // A live write changes the sheet — mirror it straight away.
+          if (['write_excel_live','format_excel_live','edit_workbook'].includes(ev.name)) refreshAll();
+        } else if (ev.type === 'error') {
+          const el = document.createElement('div'); el.className='tool err';
+          el.innerHTML = `<span class="dot"></span><span>${esc(ev.message)}</span>`;
+          log.appendChild(el); log.scrollTop = log.scrollHeight;
+        }
+      }
+    }
+  } catch { bubble('bot', 'Lost the connection to the server. Is it still running?'); }
+  busy = false; send.disabled = false; input.focus();
+  refreshAll();
+}
+
+/* ---------------- live Excel ---------------- */
+async function refreshLive() {
+  try {
+    const s = await (await fetch('/api/live')).json();
+    liveState = s;
+    const pill = $('excelPill'), t = $('excelPillText');
+    pill.classList.remove('off','warn');
+    if (!s.running) { pill.classList.add('off'); t.textContent = 'Excel not running'; }
+    else if (s.error) { pill.classList.add('warn'); t.textContent = 'Excel open · no workbook'; }
+    else { t.textContent = 'Live: ' + s.workbook + (s.unsaved ? ' •' : ''); }
+
+    $('sheetChip').textContent = s.sheet || 'No sheet';
+    $('sheetMeta').textContent = s.error ? s.error
+      : `${s.used_range || '—'} · ${s.unsaved ? 'unsaved changes' : 'saved'}`;
+    if (s.selection) $('fxAddr').textContent = s.selection;
+  } catch {}
+}
+
+async function refreshGrid() {
+  const wrap = $('gridwrap');
+  try {
+    const g = await (await fetch('/api/grid')).json();
+    if (g.error || !g.values || !g.values.length) {
+      wrap.innerHTML = `<div class="gridempty">${esc(g.error || 'Nothing to show yet.')}</div>`;
+      return;
+    }
+    const sel = (liveState && liveState.selection) || '';
+    const cols = Math.max(...g.values.map(r => r.length));
+    let h = '<table class="grid"><thead><tr><th class="rowhead"></th>';
+    for (let c = 0; c < cols; c++) h += `<th>${colName(g.start_col + c)}</th>`;
+    h += '</tr></thead><tbody>';
+    g.values.forEach((row, ri) => {
+      const rn = g.start_row + ri;
+      h += `<tr><th class="rowhead">${rn}</th>`;
+      for (let c = 0; c < cols; c++) {
+        const v = row[c] ?? '';
+        const f = (g.formulas[ri] && g.formulas[ri][c]) || '';
+        const addr = colName(g.start_col + c) + rn;
+        const cls = [];
+        if (String(f).startsWith('=')) cls.push('f');
+        if (v !== '' && !isNaN(Number(v))) cls.push('num');
+        if (addr === sel) cls.push('sel');
+        const shown = (v !== '' && !isNaN(Number(v)) && String(v).includes('.'))
+          ? (Math.round(Number(v) * 100) / 100) : v;
+        h += `<td class="${cls.join(' ')}" title="${esc(f || v)}">${esc(shown)}</td>`;
+      }
+      h += '</tr>';
+    });
+    wrap.innerHTML = h + '</tbody></table>';
+
+    // Formula bar reflects the selected cell.
+    if (sel) {
+      const m = sel.match(/^([A-Z]+)(\d+)$/);
+      if (m) {
+        const ci = [...m[1]].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - g.start_col;
+        const ri = +m[2] - g.start_row;
+        if (g.values[ri] && ci >= 0) {
+          const f = (g.formulas[ri] && g.formulas[ri][ci]) || '';
+          const v = g.values[ri][ci] ?? '';
+          $('fxVal').textContent = f || v || '(empty)';
+        }
+      }
+    }
+  } catch { wrap.innerHTML = '<div class="gridempty">Could not read the grid.</div>'; }
+}
+
+async function refreshStats() {
+  try {
+    const s = await (await fetch('/api/stats')).json();
+    const health = s.formula_health;
+    $('tiles').innerHTML = `
+      <div class="tile"><div class="k">Cells inspected</div><div class="v">${s.cells_inspected}</div>
+        <div class="s">${s.audits} audit${s.audits===1?'':'s'} this session</div></div>
+      <div class="tile"><div class="k">Formula health</div>
+        <div class="v">${health===null?'—':health+'%'}</div>
+        <div class="s ${health===null?'':health>=90?'good':health>=70?'warn':'bad'}">${
+          health===null ? 'run an audit' : esc(s.formula_health_label)}</div></div>
+      <div class="tile"><div class="k">Hints unlocked</div><div class="v">${String(s.hints).padStart(2,'0')}</div>
+        <div class="s">today</div></div>
+      <div class="tile"><div class="k">Current streak</div><div class="v">${String(s.streak).padStart(2,'0')} <span style="font-size:13px;color:var(--muted)">days</span></div>
+        <div class="s good">▲ keep going</div></div>`;
+    $('streakText').textContent =
+      `${s.streak} day${s.streak===1?'':'s'} · ${s.audits} audit${s.audits===1?'':'s'} this session`;
+  } catch {}
+}
+
+async function refreshFiles() {
+  try {
+    const {workbooks} = await (await fetch('/api/workbooks')).json();
+    $('files').innerHTML = workbooks.length ? workbooks.map(w => `
+      <div style="display:flex;align-items:center;gap:6px;font-size:11.5px">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+              title="${esc(w.name)}">${esc(w.name)}</span>
+        <button class="iconbtn openx" data-f="${esc(w.name)}" style="padding:2px 7px;font-size:10.5px">Excel</button>
+        <a href="/api/download/${encodeURIComponent(w.name)}" class="iconbtn"
+           style="padding:2px 7px;font-size:10.5px;text-decoration:none">↓</a>
+      </div>`).join('')
+      : '<div style="font-size:11.5px;color:var(--faint)">No files yet</div>';
+    document.querySelectorAll('.openx').forEach(b => b.onclick = async () => {
+      b.textContent = '…';
+      const r = await fetch('/api/excel/open', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify({file:b.dataset.f})});
+      b.textContent = 'Excel';
+      if (!r.ok) bubble('bot', 'Could not open that in Excel: ' + (await r.json()).detail);
+      refreshAll();
+    });
+  } catch {}
+}
+
+function refreshAll() { refreshLive().then(refreshGrid); refreshStats(); refreshFiles(); }
+
+/* ---------------- quick actions ---------------- */
+function renderFindings(res) {
+  const box = $('findings');
+  if (res.error) {
+    box.innerHTML = `<div class="finding error"><div class="top"><div class="msg">${esc(res.label)}</div></div>
+      <div class="fix">${esc(res.error)}</div></div>`;
+    return;
+  }
+  const list = (res.findings || []).filter(f => f.severity !== 'pass');
+  const head = `<div style="font-size:12px;color:var(--faint);margin:0 0 8px;letter-spacing:.05em">
+    ${esc(res.label.toUpperCase())} · ${esc(res.file||'')} · ${list.length} finding${list.length===1?'':'s'}</div>`;
+  box.innerHTML = head + (list.length ? list.slice(0, 12).map(f => `
+    <div class="finding ${esc(f.severity)}">
+      <div class="top">${f.cell ? `<span class="cell">${esc(f.cell)}</span>` : ''}
+        <span class="msg">${esc(f.message)}</span></div>
+      ${f.fix ? `<div class="fix"><b>Fix:</b> ${esc(f.fix)}</div>` : ''}
+    </div>`).join('')
+    : `<div class="finding done"><div class="top"><span class="msg">Clean — nothing flagged.</span></div></div>`);
+}
+
+async function runQuick(key, label) {
+  const box = $('findings');
+  box.innerHTML = `<div class="finding info"><div class="top"><span class="msg">${esc(label)}…</span></div></div>`;
+  try {
+    const r = await fetch('/api/quick/' + key, {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:'{}'});
+    renderFindings(await r.json());
+  } catch { box.innerHTML = '<div class="finding error"><div class="top"><span class="msg">Request failed.</span></div></div>'; }
+  refreshStats();
+}
+
+/* ---------------- wiring ---------------- */
+send.onclick = () => ask(input.value);
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(input.value); }
+});
+input.addEventListener('input', () => {
+  input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+});
+document.querySelectorAll('.chips button').forEach(b => b.onclick = () => {
+  const q = b.dataset.q;
+  if (q.endsWith(' ')) {           // half-written prompt: let the user finish it
+    const box = $('input'); box.value = q; box.focus();
+    box.setSelectionRange(q.length, q.length);
+  } else ask(q);
+});
+$('clearBtn').onclick = async () => {
+  await fetch('/api/reset', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({session_id:sessionId, message:''})});
+  log.innerHTML = ''; checkStatus();
+};
+$('refreshBtn').onclick = refreshAll;
+$('fullAuditBtn').onclick = () => runQuick('audit', 'Run full audit');
+$('newPracticeBtn').onclick = () => ask('Make me a practice sheet on the concept I am weakest at');
+$('newBtn').onclick = async () => {
+  const raw = prompt('Name for the new spreadsheet:', 'untitled.xlsx');
+  if (raw === null) return;
+  const btn = $('newBtn'); btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const r = await fetch('/api/excel/new', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name: raw.trim()})});
+    const d = await r.json();
+    if (!r.ok) { bubble('bot', d.detail || 'Could not create the workbook.'); }
+    else {
+      bubble('bot', `Created **${d.workbook}** and opened it in Excel. It is the active workbook now, so anything you ask me to build goes here.`);
+      refreshFiles(); refreshLive(); refreshGrid();
+    }
+  } catch (e) { bubble('bot', 'Could not create the workbook: ' + e.message); }
+  btn.disabled = false; btn.textContent = '+ New spreadsheet';
+};
+$('uploadBtn').onclick = () => $('filepicker').click();
+$('filepicker').onchange = e => upload(e.target.files);
+
+const VIEW_PROMPTS = {
+  audit: 'Audit the workbook I have open in Excel and tell me what is wrong',
+  practice: 'Generate a practice sheet for me',
+  charts: 'What chart should I use for the data I have open?',
+};
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#nav button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  const v = b.dataset.view;
+  $('centerTitle').textContent = {
+    workbook:'Workbook command center', audit:'Formula audit',
+    practice:'Practice forge', charts:'Data & charts',
+  }[v];
+  if (VIEW_PROMPTS[v]) ask(VIEW_PROMPTS[v]);
+});
+
+async function upload(files) {
+  for (const f of files) {
+    const fd = new FormData(); fd.append('file', f);
+    const r = await fetch('/api/upload', {method:'POST', body:fd});
+    if (r.ok) { const {name} = await r.json(); bubble('bot', `Uploaded **${name}**.`); }
+    else bubble('bot', `Could not upload ${f.name}.`);
+  }
+  refreshAll();
+}
+const drop = $('drop'); let dd = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); if (++dd) drop.classList.add('on'); });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('dragleave', () => { if (--dd <= 0) { dd = 0; drop.classList.remove('on'); } });
+window.addEventListener('drop', e => { e.preventDefault(); dd = 0; drop.classList.remove('on');
+  if (e.dataTransfer.files.length) upload(e.dataTransfer.files); });
+
+async function checkStatus() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    $('chatSub').textContent = (s.credentials
+      ? s.model + (s.free ? ' · free' : '')
+      : 'offline mode · engine only') + `  ·  build ${s.build} · ${s.tools} tools`;
+    const existing = $('offlineBanner');
+    if (s.credentials) { if (existing) existing.remove(); }
+    else if (!existing) {
+      const b = document.createElement('div');
+      b.className = 'banner'; b.id = 'offlineBanner';
+      b.innerHTML = '<b>Offline mode</b> — no model provider configured, so I match on '
+        + 'keywords instead of understanding freely. Audits, fixes, hints, charts, pivots, '
+        + 'data tables, new spreadsheets and practice sheets all work without one.'
+        + '<div style="margin:9px 0 4px"><b>To get real conversation, either:</b></div>'
+        + '<div style="margin:0 0 5px">1 &nbsp;Install <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a> '
+        + '— runs a model on this Mac. No key, no account, no limits. Then run '
+        + '<code>ollama pull qwen2.5:7b</code>. I detect it automatically.</div>'
+        + `<div>2 &nbsp;Get a free provider key: <code>${esc(s.setup_cmd || './setup-key.sh')}</code></div>`
+        + '<div style="margin-top:7px">Either way, no restart — picked up on your next message. '
+        + '<button id="recheckKey" style="margin-top:6px">Check again</button></div>';
+      log.prepend(b);
+      $('recheckKey').onclick = async () => {
+        const btn = $('recheckKey'); btn.disabled = true; btn.textContent = 'Checking…';
+        await checkStatus();
+        if ($('offlineBanner')) {       // still no key
+          btn.disabled = false; btn.textContent = 'Check again';
+          bubble('bot', 'Still no key found. setup-key.sh writes to `~/.config/sheets-doctor/env` — run it, then check again.');
+        } else bubble('bot', 'Key found. Full conversation is on.');
+      };
+    }
+  } catch {}
+}
+
+fetch('/api/quick-actions').then(r => r.json()).then(({actions}) => {
+  $('quick').innerHTML = actions.map(a =>
+    `<button data-k="${esc(a.key)}">${esc(a.label)}</button>`).join('');
+  document.querySelectorAll('#quick button').forEach(b =>
+    b.onclick = () => runQuick(b.dataset.k, b.textContent));
+});
+
+checkStatus(); refreshAll();
+setInterval(refreshLive, 4000);   // keep the Excel pill honest
+input.focus();
+</script>
+</body>
+</html>
