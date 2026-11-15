@@ -41,7 +41,28 @@ def _save(book, args, rep: Report) -> None:
         subprocess.run(["open", str(out)], check=False)
 
 
+def _ensure_unicode_output() -> None:
+    """Make stdout able to carry the report's box-drawing and status glyphs.
+
+    Windows consoles default to cp1252, which cannot encode "═ ─ ✗ ▲ ✓ →".
+    Printing one raises UnicodeEncodeError and takes the whole command down, so
+    every sd invocation failed there. Ask for UTF-8; if the stream refuses,
+    fall back to replacing unencodable characters rather than crashing.
+    """
+    import sys as _sys
+
+    for stream in (_sys.stdout, _sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, OSError, ValueError):
+            try:
+                stream.reconfigure(errors="replace")
+            except (AttributeError, OSError, ValueError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _ensure_unicode_output()
     p = argparse.ArgumentParser(
         prog="sheetdoc",
         description="Excel homework auditor, tutor, and builder for intro spreadsheet courses.",
