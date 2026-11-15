@@ -8,7 +8,10 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SD = [str(ROOT / ".venv/bin/python"), "-m", "sheetdoc.cli"]
+# Use the interpreter actually running this suite. Hardcoding
+# .venv/bin/python assumed one specific layout and broke anywhere the
+# dependencies were installed differently — CI, conda, uv, pipx.
+SD = [sys.executable, "-m", "sheetdoc.cli"]
 sys.path.insert(0, str(ROOT))
 
 PASS, FAIL = [], []
