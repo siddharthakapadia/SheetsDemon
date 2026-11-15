@@ -243,7 +243,7 @@ def tidy_number(text: str) -> str:
         return text
     if n == int(n) and abs(n) < 1e15:
         return str(int(n))
-    return f"{n:.10g}"
+    return f"{n:.15g}"
 
 
 def read_grid(cell_range: str | None = None, sheet: str | None = None,

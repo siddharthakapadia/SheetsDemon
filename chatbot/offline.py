@@ -289,9 +289,13 @@ TABLE_RE = re.compile(
 # "pivot table" and "table of contents" are other intents that happen to say "table".
 NOT_A_TABLE_RE = re.compile(r"\bpivot\b|\btable of contents\b", re.I)
 # "with columns A, B, C" / "headers: A, B, C" / "for A, B and C"
+# The two-word forms ("column headers", "field names") must be their own
+# alternative rather than an optional suffix. As a suffix it swallowed the first
+# column whenever that column was literally Name/Title/Heading — so "columns
+# Name, Score, Grade" silently produced ["Score", "Grade"].
 COLS_RE = re.compile(
-    r"\b(?:columns?|headers?|headings?|fields?)"
-    r"(?:\s+(?:headers?|headings?|names?|titles?))?\b"
+    r"\b(?:(?:column|field)\s+(?:headers?|headings?|names?|titles?)"
+    r"|columns?|headers?|headings?|fields?)\b"
     r"\s*(?:called|named|for|of|are|=)?\s*:?\s*(.+)",
     re.I)
 NAMED_RE = re.compile(
