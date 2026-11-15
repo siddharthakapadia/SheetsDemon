@@ -191,7 +191,7 @@ def main():
         }],
     }
     spec_file = tmp / "spec.json"
-    spec_file.write_text(json.dumps(spec))
+    spec_file.write_text(json.dumps(spec), encoding="utf-8")
     run(["build", str(spec_file)])
     built = Path(spec["file"])
     check("build creates the workbook", built.exists())

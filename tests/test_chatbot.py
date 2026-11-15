@@ -258,7 +258,7 @@ def main():
 
     # Cell values and filenames are interpolated into title="..." attributes,
     # so the client-side escaper must cover quotes, not just angle brackets.
-    page = (ROOT / "chatbot" / "static" / "index.html").read_text()
+    page = (ROOT / "chatbot" / "static" / "index.html").read_text(encoding="utf-8")
     esc_line = next((ln for ln in page.splitlines() if "const esc =" in ln), "")
     esc_body = page[page.index("const esc ="):page.index("const esc =") + 260]
     check("esc() escapes double quotes", "&quot;" in esc_body, esc_line[:90])
@@ -323,7 +323,7 @@ def main():
     from chatbot import config
 
     envf = tmp / "env"
-    envf.write_text("# comment\n\nexport ANTHROPIC_API_KEY=\"sk-ant-dummy\"\n")
+    envf.write_text("# comment\n\nexport ANTHROPIC_API_KEY=\"sk-ant-dummy\"\n", encoding="utf-8")
     saved2 = os.environ.pop("ANTHROPIC_API_KEY", None)
     try:
         check("config loads a key from file", config.load_env_file(envf))
