@@ -370,6 +370,20 @@ def main():
         t, used = run_offline("what chart should I use")
         check("offline recommends a chart", "recommend_chart" in used, str(used))
 
+        # Regression: the two-word forms ("column headers") used to be an
+        # optional suffix on the keyword, which swallowed a first column
+        # literally called Name / Title / Heading.
+        from chatbot import offline as _off
+        for phrase, want in [
+            ("make a table with columns Name, Score, Grade", ["Name", "Score", "Grade"]),
+            ("make a table with columns Title, Author", ["Title", "Author"]),
+            ("make a table with columns Heading, Value", ["Heading", "Value"]),
+            ("set up column headers: Student, Midterm", ["Student", "Midterm"]),
+            ("create a table with field names Ref, Amount", ["Ref", "Amount"]),
+        ]:
+            got = _off._columns_from(phrase)
+            check(f"columns parsed: {phrase[:38]}", got == want, f"{got} != {want}")
+
         t, used = run_offline("make me a practice sheet on vlookup")
         check("offline builds practice", "create_practice" in used, str(used))
         check("offline practice lists tasks", "1." in t, t[:150])
