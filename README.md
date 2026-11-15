@@ -136,7 +136,7 @@ Claude picks this up automatically through the `sheets-doctor` skill in
 ## 3. CLI
 
 ```bash
-~/Desktop/sheets-doctor/sd audit my-homework.xlsx
+./sd audit my-homework.xlsx
 ```
 
 Self-contained: its own venv with openpyxl, no global installs. Add `--json` to
@@ -249,7 +249,7 @@ and checked against that directory before any file operation.
 
 ```bash
 .venv/bin/python tests/test_all.py        # engine — 82 checks
-.venv/bin/python tests/test_chatbot.py    # chatbot — 243 checks
+.venv/bin/python tests/test_chatbot.py    # chatbot — 253 checks
 .venv/bin/python tests/test_providers.py  # providers — 76 checks
 .venv/bin/python tests/test_live_excel.py # live Excel — 90 checks (needs Excel)
 ```

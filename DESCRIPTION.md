@@ -73,7 +73,7 @@ or account and is auto-detected when running.
 | Engine | ~9,000 lines of Python, no runtime services |
 | Model tools | 22, spanning audit, tutor, build and live-Excel actions |
 | Providers | 8, including a zero-key local option |
-| Tests | 406 assertions, plus 90 live-Excel checks |
+| Tests | 411 assertions, plus 90 live-Excel checks |
 | Requires | Python 3.10+; live Excel features need macOS + Microsoft Excel |
 
 ---
