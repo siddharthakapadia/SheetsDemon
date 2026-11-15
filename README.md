@@ -11,12 +11,17 @@ Three ways to use it: **a chatbot**, **the Claude Code skill**, or **the CLI**.
 Needs **Python 3.10 or newer** (the code uses `X | None` type syntax).
 
 ```bash
-git clone <your-repo-url> sheets-doctor
-cd sheets-doctor
+git clone https://github.com/siddharthakapadia/SheetsDemon.git
+cd SheetsDemon
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+chmod +x sd run-chatbot.sh setup-key.sh
 ./run-chatbot.sh
 ```
+
+The `chmod` line is needed once: git does not always preserve the executable
+bit, so the launchers can arrive non-executable. If you would rather not run it,
+`bash run-chatbot.sh` and `bash sd audit my-file.xlsx` work either way.
 
 The live-Excel features — reading your open workbook, writing formulas into it,
 building charts and tables — need **macOS with Microsoft Excel installed**, and
