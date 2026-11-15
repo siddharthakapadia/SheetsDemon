@@ -265,7 +265,7 @@ def _dispatch(args) -> int:  # noqa: C901 - a dispatch table is meant to be flat
         rep = builder.build_from_spec(spec, args.out)
         if args.open_after and rep.counts["error"] == 0:
             target = args.out or json.loads(
-                Path(spec).read_text() if Path(spec).exists() else spec
+                Path(spec).read_text(encoding="utf-8") if Path(spec).exists() else spec
             ).get("file")
             if target:
                 subprocess.run(["open", str(Path(target).expanduser())], check=False)

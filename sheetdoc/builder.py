@@ -72,7 +72,7 @@ def build_from_spec(spec: dict | str, out_path: str | None = None) -> Report:
       }
     """
     if isinstance(spec, str):
-        spec = json.loads(Path(spec).read_text()) if Path(spec).exists() else json.loads(spec)
+        spec = json.loads(Path(spec).read_text(encoding="utf-8")) if Path(spec).exists() else json.loads(spec)
 
     target = Path(out_path or spec.get("file") or "workbook.xlsx").expanduser()
     wb = openpyxl.Workbook()
