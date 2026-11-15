@@ -53,7 +53,7 @@ def load_env_file(path: Path = ENV_FILE) -> bool:
     if not path.is_file():
         return False
     try:
-        for raw in path.read_text().splitlines():
+        for raw in path.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
@@ -86,9 +86,9 @@ def write_setting(name: str, value: str, path: Path = ENV_FILE) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o700)
-    lines = path.read_text().splitlines() if path.is_file() else []
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
     kept = [ln for ln in lines if not ln.strip().startswith(f"{name}=")]
     kept.append(f"{name}={value}")
-    path.write_text("\n".join(kept) + "\n")
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
     path.chmod(0o600)
     os.environ[name] = value

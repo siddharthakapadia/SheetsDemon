@@ -58,7 +58,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    return (ROOT / "static" / "index.html").read_text()
+    return (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 
 
 def _build_stamp() -> str:

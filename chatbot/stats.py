@@ -31,7 +31,7 @@ class Stats:
         self.streak = 0
         self.last_day: str | None = None
         try:
-            d = json.loads(self.store.read_text())
+            d = json.loads(self.store.read_text(encoding="utf-8"))
             self.streak = int(d.get("streak", 0))
             self.last_day = d.get("last_day")
         except Exception:
