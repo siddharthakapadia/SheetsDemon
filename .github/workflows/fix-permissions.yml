@@ -1,0 +1,41 @@
+# One-shot maintenance job.
+#
+# The initial commits were made through GitHub's web uploader, which stores
+# every file as mode 100644 — so sd, run-chatbot.sh and setup-key.sh arrive
+# non-executable and `./run-chatbot.sh` fails with "permission denied".
+# There is no way to set the executable bit from the web UI, so this workflow
+# does it with git and commits the result.
+#
+# Run it once from the Actions tab (Run workflow), then delete this file.
+
+name: fix script permissions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  chmod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mark the launchers executable
+        run: |
+          git update-index --chmod=+x sd
+          git update-index --chmod=+x run-chatbot.sh
+          git update-index --chmod=+x setup-key.sh
+          git diff --cached --summary
+
+      - name: Commit if anything changed
+        run: |
+          if git diff --cached --quiet; then
+            echo "Nothing to do — the bits are already set."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Make the launcher scripts executable"
+          git push
