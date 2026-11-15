@@ -18,7 +18,11 @@ PASS, FAIL = [], []
 
 
 def run(args, expect_ok=True):
-    r = subprocess.run(SD + args, capture_output=True, text=True, cwd=ROOT)
+    # The CLI deliberately emits UTF-8 (its report uses box-drawing glyphs),
+    # so decode as UTF-8 rather than the locale codec — on Windows that is
+    # cp1252, which cannot decode what we just asked the CLI to print.
+    r = subprocess.run(SD + args, capture_output=True, text=True, cwd=ROOT,
+                       encoding="utf-8", errors="replace")
     if r.returncode == 2 or "Traceback" in r.stderr:
         FAIL.append(f"{' '.join(args[:3])}: crashed\n{r.stderr[-600:]}")
         return None
